@@ -13,10 +13,13 @@ import com.intellij.xdebugger.frame.XStackFrame
 import com.intellij.xdebugger.impl.XDebugSessionImpl
 import com.sun.jdi.Location
 import org.jetbrains.kotlin.idea.debugger.core.StackFrameInterceptor
+import org.jetbrains.kotlin.idea.debugger.coroutine.data.CoroutinePreflightFrame
 import org.jetbrains.kotlin.idea.debugger.coroutine.proxy.SkipCoroutineStackFrameProxyImpl
 import org.jetbrains.kotlin.idea.debugger.coroutine.util.CoroutineFrameBuilder
 import org.jetbrains.kotlin.idea.util.application.isUnitTestMode
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
+import java.io.FileOutputStream
+import kotlin.system.measureTimeMillis
 
 class CoroutineStackFrameInterceptor(val project: Project) : StackFrameInterceptor {
     override fun createStackFrame(frame: StackFrameProxyImpl, debugProcess: DebugProcessImpl, location: Location): XStackFrame? {
@@ -27,8 +30,19 @@ class CoroutineStackFrameInterceptor(val project: Project) : StackFrameIntercept
                 isUnitTestMode() -> debugProcess.suspendManager.pausedContext
                 else -> debugProcess.debuggerContext.suspendContext
             }
-            val stackFrame = suspendContextImpl?.let {
-                CoroutineFrameBuilder.coroutineExitFrame(frame, it)
+
+            var stackFrame: CoroutinePreflightFrame?
+            val time = measureTimeMillis {
+                stackFrame = suspendContextImpl?.let {
+                    CoroutineFrameBuilder.coroutineExitFrame(frame, it)
+                }
+            }
+
+            if (stackFrame != null) {
+                FileOutputStream("/usr/local/google/home/nikitanazarov/stepping.txt", true).bufferedWriter().use { writer ->
+                    writer.append("${stackFrame!!.coroutineInfoData.stackTrace.size} $time")
+                    writer.append("\n")
+                }
             }
 
             if (stackFrame != null) {

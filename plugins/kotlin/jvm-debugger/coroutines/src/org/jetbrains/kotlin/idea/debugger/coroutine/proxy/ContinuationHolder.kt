@@ -3,8 +3,11 @@
 package org.jetbrains.kotlin.idea.debugger.coroutine.proxy
 
 import com.intellij.debugger.engine.JavaValue
+import com.intellij.debugger.jdi.GeneratedLocation
+import com.sun.jdi.ClassType
+import com.sun.jdi.Location
+import java.lang.StackTraceElement
 import com.sun.jdi.ObjectReference
-import com.sun.jdi.VMDisconnectedException
 import org.jetbrains.kotlin.idea.debugger.coroutine.data.*
 import org.jetbrains.kotlin.idea.debugger.coroutine.proxy.mirror.*
 import org.jetbrains.kotlin.idea.debugger.coroutine.util.isAbstractCoroutine
@@ -27,17 +30,19 @@ class ContinuationHolder private constructor(val context: DefaultExecutionContex
                     consumer.add(coroutineStackFrame)
             }
             val lastRestoredFrame = continuationStack.coroutineStack.lastOrNull()
-            return findCoroutineInformation(lastRestoredFrame?.baseContinuationImpl?.coroutineOwner, consumer)
-        } catch (e: VMDisconnectedException) {
+            return findCoroutineInformation(lastRestoredFrame?.getCoroutineOwner(), consumer)
         } catch (e: Exception) {
             log.warn("Error while looking for stack frame", e)
         }
         return null
     }
 
+    private fun MirrorOfStackFrame.getCoroutineOwner(): ObjectReference? =
+        debugMetadata?.baseContinuationImpl?.getCoroutineOwner(that, context)
+
     private fun findCoroutineInformation(
-            coroutineOwner: ObjectReference?,
-            stackFrameItems: List<CoroutineStackFrameItem>
+        coroutineOwner: ObjectReference?,
+        stackFrameItems: List<CoroutineStackFrameItem>
     ): CompleteCoroutineInfoData? {
         val creationStackTrace = mutableListOf<CreationCoroutineStackFrameItem>()
         val realState = if (coroutineOwner?.type()?.isAbstractCoroutine() == true) {
@@ -49,9 +54,9 @@ class ContinuationHolder private constructor(val context: DefaultExecutionContex
                 if (providedCreationStackTrace != null)
                     for (index in providedCreationStackTrace.indices) {
                         val frame = providedCreationStackTrace[index]
-                        val ste = frame.stackTraceElement()
-                        val location = locationCache.createLocation(ste)
-                        creationStackTrace.add(CreationCoroutineStackFrameItem(ste, location, index == 0))
+                        val stackTraceElement = frame.stackTraceElement()
+                        val location = locationCache.createLocation(stackTraceElement)//stackTraceElement.createLocation(context)
+                        creationStackTrace.add(CreationCoroutineStackFrameItem(stackTraceElement, location, index == 0))
                     }
                 CoroutineDescriptor.instance(ci)
             } else {
@@ -81,10 +86,10 @@ class ContinuationHolder private constructor(val context: DefaultExecutionContex
         return null
     }
 
-    private fun createStackFrameItem(
-        frame: MirrorOfStackFrame
-    ): DefaultCoroutineStackFrameItem? {
+    private fun createStackFrameItem(frame: MirrorOfStackFrame): DefaultCoroutineStackFrameItem? {
         val stackTraceElement = frame.baseContinuationImpl.stackTraceElement?.stackTraceElement() ?: return null
+        //val locationClass = context.classesCache[stackTraceElement.className].firstOrNull() as? ClassType ?: return null
+        //val generatedLocation = GeneratedLocation(locationClass, stackTraceElement.methodName, stackTraceElement.lineNumber)
         val locationClass = context.findClassSafe(stackTraceElement.className) ?: return null
         val generatedLocation = locationCache.createLocation(locationClass, stackTraceElement.methodName, stackTraceElement.lineNumber)
         val spilledVariables = frame.baseContinuationImpl.spilledValues(context)
@@ -118,10 +123,7 @@ fun MirrorOfBaseContinuationImpl.spilledValues(context: DefaultExecutionContext)
 
 fun FieldVariable.toJavaValue(continuation: ObjectReference, context: DefaultExecutionContext): JavaValue {
     val valueDescriptor = ContinuationVariableValueDescriptorImpl(
-        context,
-        continuation,
-        fieldName,
-        variableName
+        context, continuation, fieldName, variableName
     )
     return JavaValue.create(
         null,
@@ -131,3 +133,8 @@ fun FieldVariable.toJavaValue(continuation: ObjectReference, context: DefaultExe
         false
     )
 }
+
+//internal fun StackTraceElement.createLocation(context: DefaultExecutionContext): Location {
+//    val type = context.classesCache[className].firstOrNull() ?: error("Unable to find loaded class $className")
+//    return GeneratedLocation(type, methodName, lineNumber)
+//}

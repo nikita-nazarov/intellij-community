@@ -12,7 +12,6 @@ import org.jetbrains.kotlin.idea.debugger.coroutine.data.LazyCoroutineInfoData
 import org.jetbrains.kotlin.idea.debugger.coroutine.proxy.CoroutineInfoProvider
 import org.jetbrains.kotlin.idea.debugger.coroutine.proxy.mirror.DebugProbesImpl
 import org.jetbrains.kotlin.idea.debugger.coroutine.proxy.mirror.MirrorOfCoroutineContext
-import org.jetbrains.kotlin.idea.debugger.coroutine.util.logger
 import org.jetbrains.kotlin.idea.debugger.base.util.evaluate.DefaultExecutionContext
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 
@@ -40,9 +39,10 @@ class CoroutinesInfoFromJsonAndReferencesProvider(
             ?: error("The fourth element of the result array must be an array")
         val coroutinesInfo = Gson().fromJson(coroutinesInfoAsJsonString, Array<CoroutineInfoFromJson>::class.java)
 
-        if (coroutineInfoRefs.size != lastObservedFrameRefs.size ||
-            lastObservedFrameRefs.size != coroutinesInfo.size ||
-            coroutinesInfo.size != lastObservedThreadRefs.size) {
+        val size = coroutineInfoRefs.size
+        if (lastObservedFrameRefs.size != size ||
+            coroutinesInfo.size != size ||
+            lastObservedThreadRefs.size != size) {
             error("Arrays must have equal sizes")
         }
 
@@ -67,6 +67,7 @@ class CoroutinesInfoFromJsonAndReferencesProvider(
                 )
             )
         }
+
         return result
     }
 
@@ -110,13 +111,11 @@ class CoroutinesInfoFromJsonAndReferencesProvider(
             }
             return null
         }
-
-        val log by logger
     }
 }
 
-private inline fun <reified T> ArrayReference.toTypedList(): List<T> {
-    val result = mutableListOf<T>()
+internal inline fun <reified T> ArrayReference.toTypedList(): List<T> {
+    val result = ArrayList<T>(length())
     for (value in values) {
         if (value !is T) {
             error("Value has type ${value::class.java}, but ${T::class.java} was expected")

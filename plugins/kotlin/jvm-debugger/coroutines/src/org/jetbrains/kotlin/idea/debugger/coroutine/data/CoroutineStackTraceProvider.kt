@@ -4,6 +4,7 @@ package org.jetbrains.kotlin.idea.debugger.coroutine.data
 import com.intellij.debugger.engine.JavaValue
 import com.sun.jdi.ObjectReference
 import org.jetbrains.kotlin.idea.debugger.core.invokeInManagerThread
+//import org.jetbrains.kotlin.idea.debugger.coroutine.proxy.createLocation
 import org.jetbrains.kotlin.idea.debugger.coroutine.proxy.LocationCache
 import org.jetbrains.kotlin.idea.debugger.coroutine.proxy.mirror.DebugMetadata
 import org.jetbrains.kotlin.idea.debugger.coroutine.proxy.mirror.FieldVariable
@@ -44,10 +45,12 @@ class CoroutineStackTraceProvider(private val executionContext: DefaultExecution
             val spilledVariablesPerFrame = getSpilledVariablesForNFrames(mirror.lastObservedFrame, restoredStackTraceElements.size)
             val restoredStackFrames = restoredStackTraceElements.mapIndexed { ix, element ->
                 val variables = spilledVariablesPerFrame.getOrNull(ix) ?: emptyList()
-                SuspendCoroutineStackFrameItem(element, locationCache.createLocation(element), variables)
+                val location = locationCache.createLocation(element) // locationCache.createLocation(ste)
+                SuspendCoroutineStackFrameItem(element, location, variables)
             }
             val creationStackFrames = frames.subList(index + 1, frames.size).mapIndexed { ix, element ->
-                CreationCoroutineStackFrameItem(element, locationCache.createLocation(element), ix == 0)
+                val location = locationCache.createLocation(element) // locationCache.createLocation(ste)
+                CreationCoroutineStackFrameItem(element, location, ix == 0)
             }
 
             return@invokeInManagerThread CoroutineStackFrames(restoredStackFrames, creationStackFrames)
