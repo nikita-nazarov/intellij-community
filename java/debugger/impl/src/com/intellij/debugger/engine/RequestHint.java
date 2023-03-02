@@ -271,7 +271,7 @@ public class RequestHint {
   }
 
   @Nullable
-  final RequestHint getParentHint() {
+  public final RequestHint getParentHint() {
     return myParentHint;
   }
 }

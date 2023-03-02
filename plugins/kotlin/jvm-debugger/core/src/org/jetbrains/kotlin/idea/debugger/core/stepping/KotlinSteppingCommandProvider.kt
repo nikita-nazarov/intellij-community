@@ -212,7 +212,7 @@ fun getStepOutAction(location: Location, frameProxy: StackFrameProxyImpl): Kotli
     val filter = object : KotlinStepOverFilter(location) {
         override fun isAcceptable(location: Location, locationToken: LocationToken): Boolean =
             locationToken.lineNumber >= 0
-                    && locationToken.lineNumber != token.lineNumber
+                    //&& locationToken.lineNumber != token.lineNumber
                     && token.inlineVariables.any { it !in locationToken.inlineVariables }
     }
 

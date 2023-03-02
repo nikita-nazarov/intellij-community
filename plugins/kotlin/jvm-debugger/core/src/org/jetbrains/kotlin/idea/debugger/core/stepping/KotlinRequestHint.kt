@@ -85,7 +85,8 @@ class KotlinStepOverRequestHint(
                 }
 
                 val location = frameProxy.safeLocation()
-                val isAcceptable = location != null && filter.locationMatches(context, location)
+                val isAcceptable = location != null &&
+                        (filter.locationMatches(context, location) || parentHint?.methodFilter?.locationMatches(context.debugProcess, location) == true)
                 return if (isAcceptable) STOP else StepRequest.STEP_OVER
             } else if (isSteppedOut) {
                 val location = frameProxy.safeLocation()
@@ -159,6 +160,8 @@ class KotlinStepOverRequestHint(
     }
 }
 
+interface StopOnReachedMethodFilter
+
 class KotlinStepIntoRequestHint(
     stepThread: ThreadReferenceProxyImpl,
     suspendContext: SuspendContextImpl,
@@ -180,6 +183,7 @@ class KotlinStepIntoRequestHint(
                 lastWasKotlinFakeLineNumber = true
                 return StepRequest.STEP_INTO
             }
+
             // If the last line was a fake line number, and we are not smart-stepping,
             // the next non-fake line number is always of interest (otherwise, we wouldn't
             // have had to insert the fake line number in the first place).
@@ -187,6 +191,12 @@ class KotlinStepIntoRequestHint(
                 lastWasKotlinFakeLineNumber = false
                 return STOP
             }
+
+            val filter = methodFilter
+            if (filter is StopOnReachedMethodFilter && filter.locationMatches(context.debugProcess, location)) {
+                return STOP
+            }
+
             return super.getNextStepDepth(context)
         } catch (ignored: VMDisconnectedException) {
         } catch (e: EvaluateException) {
