@@ -7,6 +7,7 @@ import com.sun.jdi.Method
 import org.jetbrains.kotlin.idea.debugger.base.util.DexDebugFacility
 import org.jetbrains.kotlin.idea.debugger.base.util.safeVariables
 import org.jetbrains.kotlin.idea.debugger.core.DebuggerUtils.getBorders
+import java.util.*
 
 // A pair of a [LocalVariable] with its starting [Location] and
 // a stable [Comparable] implementation.
@@ -27,6 +28,15 @@ class VariableWithLocation(
         get() = variable.name()
 
     override fun toString(): String = "$name at $location"
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is VariableWithLocation) return false
+        return variable == other.variable && location == other.location
+    }
+
+    override fun hashCode(): Int =
+        Objects.hash(variable, location)
 }
 
 // Returns a list of all [LocalVariable]s in the given methods with their starting

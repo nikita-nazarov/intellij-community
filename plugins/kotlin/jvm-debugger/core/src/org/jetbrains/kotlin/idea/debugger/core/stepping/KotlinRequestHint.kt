@@ -18,6 +18,8 @@ import org.jetbrains.kotlin.idea.debugger.base.util.safeLocation
 import org.jetbrains.kotlin.idea.debugger.base.util.safeMethod
 import org.jetbrains.kotlin.idea.debugger.core.isKotlinFakeLineNumber
 import org.jetbrains.kotlin.idea.debugger.core.isOnSuspensionPoint
+import org.jetbrains.kotlin.idea.debugger.core.stackFrame.KotlinStackFrameInfo
+import org.jetbrains.kotlin.idea.debugger.core.stackFrame.computeKotlinStackFrameInfos
 import org.jetbrains.kotlin.load.java.JvmAbi
 import org.jetbrains.org.objectweb.asm.Type
 
@@ -30,8 +32,17 @@ open class KotlinRequestHint(
     parentHint: RequestHint?
 ) : RequestHint(stepThread, suspendContext, stepSize, depth, filter, parentHint) {
     private val myInlineFilter = createKotlinInlineFilter(suspendContext)
-    override fun isTheSameFrame(context: SuspendContextImpl) =
-        super.isTheSameFrame(context) && (myInlineFilter === null || !myInlineFilter.isNestedInline(context))
+    private val inlineStackTrace = suspendContext.frameProxy?.stackFrame?.computeKotlinStackFrameInfos().orEmpty()
+
+    override fun isTheSameFrame(context: SuspendContextImpl): Boolean {
+        val isTheSameFrame = super.isTheSameFrame(context)
+        val currentInlineStackTrace = context.frameProxy?.stackFrame?.computeKotlinStackFrameInfos().orEmpty()
+        if (isTheSameFrame && currentInlineStackTrace.size < inlineStackTrace.size) {
+            mySteppedOut = true
+            return false
+        }
+        return isTheSameFrame && isTheSameInlineStackTrace(inlineStackTrace, currentInlineStackTrace)
+    }
 
     override fun doStep(debugProcess: DebugProcessImpl, suspendContext: SuspendContextImpl?, stepThread: ThreadReferenceProxyImpl?, size: Int, depth: Int) {
         if (depth == StepRequest.STEP_OUT) {
@@ -51,13 +62,27 @@ open class KotlinRequestHint(
     }
 }
 
+private fun isTheSameInlineStackTrace(trace1: List<KotlinStackFrameInfo>, trace2: List<KotlinStackFrameInfo>): Boolean {
+    if (trace1.size != trace2.size) return false
+
+    // Skipping the first element as it resembles a real frame
+    for (i in 1 until trace1.size) {
+        val scopeVariable1 = trace1[i].scopeVariable ?: return false
+        val scopeVariable2 = trace2[i].scopeVariable ?: return false
+        if (scopeVariable1 != scopeVariable2) {
+            return false
+        }
+    }
+    return true
+}
+
 // Originally copied from RequestHint
 class KotlinStepOverRequestHint(
     stepThread: ThreadReferenceProxyImpl,
     suspendContext: SuspendContextImpl,
     private val filter: KotlinMethodFilter,
     parentHint: RequestHint?
-) : RequestHint(stepThread, suspendContext, StepRequest.STEP_LINE, StepRequest.STEP_OVER, filter, parentHint) {
+) : KotlinRequestHint(stepThread, suspendContext, StepRequest.STEP_LINE, StepRequest.STEP_OVER, filter, parentHint) {
     private companion object {
         private val LOG = Logger.getInstance(KotlinStepOverRequestHint::class.java)
     }

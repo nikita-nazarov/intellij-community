@@ -34,7 +34,7 @@ public class RequestHint {
   private final int myDepth;
   private final SourcePosition myPosition;
   private final int myFrameCount;
-  private boolean mySteppedOut = false;
+  protected boolean mySteppedOut = false;
 
   @Nullable
   private final MethodFilter myMethodFilter;
