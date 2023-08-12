@@ -11,6 +11,7 @@ import org.jetbrains.kotlin.idea.debugger.base.util.safeThreadProxy
 class InlineStackFrameProxyImpl(
     private val location: Location?,
     val inlineDepth: Int, // This variable is a helper for evaluator
+    val inlineScopeNumber: Int,
     threadProxy: ThreadReferenceProxyImpl,
     stackFrame: StackFrame,
     indexFromBottom: Int
@@ -21,6 +22,7 @@ class InlineStackFrameProxyImpl(
 fun safeInlineStackFrameProxy(
     location: Location?,
     inlineDepth: Int,
+    inlineScopeNumber: Int,
     frameProxy: StackFrameProxyImpl
 ): StackFrameProxyImpl {
     val threadProxy = frameProxy.safeThreadProxy() ?: return frameProxy
@@ -28,6 +30,7 @@ fun safeInlineStackFrameProxy(
     return InlineStackFrameProxyImpl(
         location,
         inlineDepth,
+        inlineScopeNumber,
         threadProxy,
         stackFrame,
         frameProxy.indexFromBottom

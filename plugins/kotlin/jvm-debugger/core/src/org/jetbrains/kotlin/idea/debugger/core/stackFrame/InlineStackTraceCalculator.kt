@@ -2,6 +2,7 @@
 package org.jetbrains.kotlin.idea.debugger.core.stackFrame
 
 import com.intellij.debugger.impl.DebuggerUtilsEx
+import com.intellij.debugger.jdi.GeneratedLocation
 import com.intellij.debugger.jdi.LocalVariableProxyImpl
 import com.intellij.debugger.jdi.StackFrameProxyImpl
 import com.intellij.xdebugger.frame.XStackFrame
@@ -9,25 +10,24 @@ import com.sun.jdi.LocalVariable
 import com.sun.jdi.Location
 import com.sun.jdi.Method
 import com.sun.jdi.StackFrame
+import org.jetbrains.kotlin.idea.debugger.base.util.*
 import org.jetbrains.kotlin.idea.debugger.core.VariableWithLocation
-import org.jetbrains.kotlin.idea.debugger.base.util.getInlineDepth
-import org.jetbrains.kotlin.idea.debugger.base.util.safeLineNumber
-import org.jetbrains.kotlin.idea.debugger.base.util.safeMethod
-import org.jetbrains.kotlin.idea.debugger.base.util.safeSourceName
+import org.jetbrains.kotlin.idea.debugger.core.DebuggerUtils.getBorders
 import org.jetbrains.kotlin.idea.debugger.core.isKotlinFakeLineNumber
 import org.jetbrains.kotlin.idea.debugger.core.filterRepeatedVariables
 import org.jetbrains.kotlin.idea.debugger.core.sortedVariablesWithLocation
 import org.jetbrains.kotlin.load.java.JvmAbi
+import java.util.LinkedList
 
 object InlineStackTraceCalculator {
     fun calculateInlineStackTrace(frameProxy: StackFrameProxyImpl): List<XStackFrame> =
-        frameProxy.stackFrame.computeKotlinStackFrameInfos().map {
+        frameProxy.stackFrame.computeKotlinStackFrameInfosUsingStratum().map {
             it.toXStackFrame(frameProxy)
         }.reversed()
 
     // Calculate the variables that are visible in the top stack frame.
     fun calculateVisibleVariables(frameProxy: StackFrameProxyImpl): List<LocalVariableProxyImpl> =
-        frameProxy.stackFrame.computeKotlinStackFrameInfos().last().visibleVariableProxies(frameProxy)
+        frameProxy.stackFrame.computeKotlinStackFrameInfosUsingStratum().lastOrNull()?.visibleVariableProxies(frameProxy).orEmpty()
 }
 
 private val INLINE_LAMBDA_REGEX =
@@ -41,7 +41,7 @@ class KotlinStackFrameInfo(
     val scopeVariable: VariableWithLocation?,
     // For inline lambda stack frames we need to include the visible variables from the
     // enclosing stack frame.
-    private val enclosingStackFrame: KotlinStackFrameInfo?,
+    var enclosingStackFrame: KotlinStackFrameInfo?,
     // All variables that were added in this stack frame.
     val visibleVariablesWithLocations: MutableList<VariableWithLocation>,
     // For an inline stack frame, the number of calls from the nearest non-inline function.
@@ -54,23 +54,9 @@ class KotlinStackFrameInfo(
     // This depends on the next stack frame info and is initialized after the KotlinStackFrameInfo.
     var callLocation: Location? = null
 
-    val displayName: String?
-        get() {
-            val scopeVariableName = scopeVariable?.name
-                ?: return null
-            if (scopeVariableName.startsWith(JvmAbi.LOCAL_VARIABLE_NAME_PREFIX_INLINE_FUNCTION)) {
-                return scopeVariableName.substringAfter(JvmAbi.LOCAL_VARIABLE_NAME_PREFIX_INLINE_FUNCTION)
-            }
+    var displayName = fetchDisplayName()
 
-            val groupValues = INLINE_LAMBDA_REGEX.matchEntire(scopeVariableName)?.groupValues
-            if (groupValues != null) {
-                val lambdaName = groupValues.getOrNull(1)
-                val declarationFunctionName = groupValues.getOrNull(2)
-                return "lambda '$lambdaName' in '$declarationFunctionName'"
-            } else {
-                return scopeVariableName
-            }
-        }
+    var inlineScopeNumber = -1
 
     val visibleVariables: List<LocalVariable>
         get() = filterRepeatedVariables(
@@ -80,15 +66,31 @@ class KotlinStackFrameInfo(
                 }
         )
 
+    fun fetchDisplayName(): String? {
+        val scopeVariableName = scopeVariable?.name ?: return null
+        if (scopeVariableName.startsWith(JvmAbi.LOCAL_VARIABLE_NAME_PREFIX_INLINE_FUNCTION)) {
+            return scopeVariableName.substringAfter(JvmAbi.LOCAL_VARIABLE_NAME_PREFIX_INLINE_FUNCTION)
+        }
+
+        val groupValues = INLINE_LAMBDA_REGEX.matchEntire(scopeVariableName)?.groupValues
+        if (groupValues != null) {
+            val lambdaName = groupValues.getOrNull(1)
+            val declarationFunctionName = groupValues.getOrNull(2)
+            return "lambda '$lambdaName' in '$declarationFunctionName'"
+        } else {
+            return scopeVariableName
+        }
+    }
+
     fun visibleVariableProxies(frameProxy: StackFrameProxyImpl): List<LocalVariableProxyImpl> =
         visibleVariables.map { LocalVariableProxyImpl(frameProxy, it) }
 
     fun toXStackFrame(frameProxy: StackFrameProxyImpl): XStackFrame {
         val variables = visibleVariableProxies(frameProxy)
         displayName?.let { name ->
-            return InlineStackFrame(callLocation, name, frameProxy, depth, variables)
+            return InlineStackFrame(callLocation, name, frameProxy, depth, variables, inlineScopeNumber)
         }
-        return KotlinStackFrame(safeInlineStackFrameProxy(callLocation, 0, frameProxy), variables)
+        return KotlinStackFrame(safeInlineStackFrameProxy(callLocation, 0, inlineScopeNumber, frameProxy), variables)
     }
 }
 
@@ -103,6 +105,131 @@ fun StackFrame.computeKotlinStackFrameInfos(): List<KotlinStackFrameInfo> {
     return computeStackFrameInfos(allVisibleVariables).also {
         fetchCallLocations(method, it, location)
     }
+}
+
+fun StackFrame.computeKotlinStackFrameInfosUsingStratum(): List<KotlinStackFrameInfo> {
+    val location = location()
+    val currentInlineScope = location.safeSourceName("KotlinInlineDebug")?.toInlineScope() ?: return emptyList()
+    val method = location.safeMethod() ?: return emptyList()
+    val locations = method.allLineLocations()
+    val allVisibleVariables = LinkedList<VariableWithLocation>()
+    method.safeVariables()
+        .orEmpty()
+        .mapNotNullTo(allVisibleVariables) { local ->
+            if (local.isVisible(this)) {
+                local.getBorders()?.let { VariableWithLocation(local, it.start) }
+            } else {
+                null
+            }
+        }
+    val lineNumberToLocation = mutableMapOf<Int, Location>()
+    for (loc in locations) {
+        lineNumberToLocation[loc.lineNumber("Java")] = loc
+    }
+
+    val inlineScopes = locations.mapNotNull { it.safeSourceName("KotlinInlineDebug")?.toInlineScope() }
+    val idToScope = mutableMapOf<Int, InlineScope>()
+    for (scopeInfo in inlineScopes) {
+        idToScope[scopeInfo.id] = scopeInfo
+    }
+
+    var id: Int? = currentInlineScope.id
+    val result = mutableListOf<KotlinStackFrameInfo>()
+    var prevScope: InlineScope? = null
+    val surroundingScopeIdToFrame = hashMapOf<Int, KotlinStackFrameInfo>()
+    while (id != null) {
+        val scope = idToScope[id] ?: break
+        val frame = KotlinStackFrameInfo(null, null, mutableListOf(), -1).apply {
+            inlineScopeNumber = id!!
+            displayName = scope.name
+            if (prevScope != null) {
+                val callSiteLineNumber = prevScope!!.callSiteLineNumber
+                val lineLocation = lineNumberToLocation[callSiteLineNumber]
+                callLocation = lineLocation
+            } else {
+                callLocation = location
+            }
+
+            val iterator = allVisibleVariables.iterator()
+            while (iterator.hasNext()) {
+                val variableWithLocation = iterator.next()
+                if (scope.isVariableVisible(variableWithLocation.name)) {
+                    visibleVariablesWithLocations.add(variableWithLocation)
+                    iterator.remove()
+                }
+            }
+        }
+        result.add(frame)
+        surroundingScopeIdToFrame[id]?.enclosingStackFrame = frame
+        id = scope.callerScopeId
+        prevScope = scope
+
+        if (scope is InlineLambdaScope) {
+            val surroundingScopeId = scope.surroundingScopeId
+            if (surroundingScopeId == null) {
+                surroundingScopeIdToFrame[idToScope[scope.callerScopeId]?.callerScopeId ?: -1] = frame
+            } else {
+                surroundingScopeIdToFrame[surroundingScopeId] = frame
+            }
+        }
+    }
+
+    val originalFrame = KotlinStackFrameInfo(null, null, mutableListOf(), -1).apply {
+        if (prevScope != null) {
+            val callSiteLineNumber = prevScope.callSiteLineNumber
+            val lineLocation = lineNumberToLocation[callSiteLineNumber]
+            callLocation = GeneratedLocation(
+                lineLocation?.declaringType() ?: location.declaringType(),
+                lineLocation?.method()?.name() ?: location.method().name(),
+                lineLocation?.lineNumber() ?: callSiteLineNumber
+            )
+        } else {
+            callLocation = location
+        }
+
+        // Add the rest of visible variables
+        visibleVariablesWithLocations.addAll(allVisibleVariables)
+    }
+    surroundingScopeIdToFrame[-1]?.enclosingStackFrame = originalFrame
+    result.add(originalFrame)
+
+    return result.reversed()
+}
+
+open class InlineScope(val name: String, val id: Int, val callerScopeId: Int?, val callSiteLineNumber: Int) {
+    fun isVariableVisible(name: String): Boolean =
+        if (id < 0) {
+            !name.contains("\\")
+        } else {
+            name.endsWith("\\$id")
+        }
+}
+
+class InlineLambdaScope(
+    name: String,
+    id: Int,
+    callerScopeId: Int?,
+    callSiteLineNumber: Int,
+    val surroundingScopeId: Int?
+) : InlineScope(name, id, callerScopeId, callSiteLineNumber)
+
+private val INLINE_SCOPE_REGEX = "([^/]+)/(\\d+)/(\\d*)/(\\d+)(/(\\d*)/)?".toRegex()
+
+fun String.toInlineScope(): InlineScope? {
+    val matchGroups = INLINE_SCOPE_REGEX.matchEntire(this)?.groupValues ?: return null
+    if (matchGroups.size != 7) {
+        return null
+    }
+
+    val name = matchGroups[1]
+    val id = matchGroups[2].toIntOrNull() ?: 0 // TODO: return null if parsing failed?
+    val callerScopeId = matchGroups[3].toIntOrNull()
+    val callSiteLineNumber = matchGroups[4].toIntOrNull() ?: 0
+    if (matchGroups[5].isNotEmpty()) {
+        val surroundingScopeId = matchGroups[6].toIntOrNull()
+        return InlineLambdaScope(name, id, callerScopeId, callSiteLineNumber, surroundingScopeId)
+    }
+    return InlineScope(name, id, callerScopeId, callSiteLineNumber)
 }
 
 // Constructs a list of inline stack frames from a list of currently visible variables

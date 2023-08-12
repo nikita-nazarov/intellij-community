@@ -92,6 +92,7 @@ class KotlinPositionManager(private val debugProcess: DebugProcess) : MultiReque
             return listOf(coroutineFrame)
         }
 
+        val ln = location.lineNumber()
         if (Registry.get("debugger.kotlin.inline.stack.trace.enabled").asBoolean()) {
             val inlineStackTrace = InlineStackTraceCalculator.calculateInlineStackTrace(frameProxy)
             if (inlineStackTrace.isNotEmpty()) {

@@ -288,10 +288,24 @@ class VariableFinder(val context: ExecutionContext) {
         kind: VariableKind,
         namePredicate: (String) -> Boolean
     ): Result? {
-        val inlineDepth =
-            frameProxy.safeAs<InlineStackFrameProxyImpl>()?.inlineDepth
-                ?: getInlineDepth(variables)
+        val inlineFrameProxy = frameProxy as? InlineStackFrameProxyImpl
+        if (inlineFrameProxy != null) {
+            val scopeNumber = inlineFrameProxy.inlineScopeNumber
+            if (scopeNumber >= 0) {
+                findLocalVariable(variables, kind, -1) { name -> // TODO: which inline depth to pass here?
+                    val scope = name.substringAfter('\\').toIntOrNull()
+                    when (scope) {
+                      scopeNumber -> namePredicate(name.substringBefore('\\'))
+                      null -> namePredicate(name)
+                      else -> false
+                    }
+                }?.let { return it }
+            }
 
+            findLocalVariable(variables, kind, inlineFrameProxy.inlineDepth, namePredicate)?.let { return it }
+        }
+
+        val inlineDepth = getInlineDepth(variables)
         findLocalVariable(variables, kind, inlineDepth, namePredicate)?.let { return it }
 
         // Try to find variables outside of inline functions as well
