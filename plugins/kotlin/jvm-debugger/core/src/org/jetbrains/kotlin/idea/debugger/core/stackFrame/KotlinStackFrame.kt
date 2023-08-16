@@ -81,13 +81,18 @@ open class KotlinStackFrame(
 
         fun addItem(variable: LocalVariableProxyImpl) {
             val variableDescriptor = nodeManager.getLocalVariableDescriptor(null, variable)
-            add(JavaValue.create(null, variableDescriptor, evaluationContext, nodeManager, false))
+            val actualDescriptor =
+                if (variable.name().contains('\\'))
+                    DelegateDescriptor(variable.name().substringBefore('\\'), variableDescriptor)
+                else
+                    variableDescriptor
+            add(JavaValue.create(null, actualDescriptor, evaluationContext, nodeManager, false))
         }
 
         thisVariables.forEach(::addItem)
         otherVariables.forEach {
             if (it.name().startsWith(AsmUtil.CAPTURED_PREFIX)) {
-                val valueData = CapturedAsLocalVariableValueData(it.name().drop(1), it)
+                val valueData = CapturedAsLocalVariableValueData(it.name().drop(1).substringBefore('\\'), it)
                 val variableDescriptor = nodeManager.getDescriptor(null, valueData)
                 add(JavaValue.create(null, variableDescriptor, evaluationContext, nodeManager, false))
             } else {
