@@ -1751,6 +1751,16 @@ public abstract class K1IdeK2CodeKotlinEvaluateExpressionTestGenerated extends A
                 runTest("testData/evaluation/multipleBreakpoints/initializer.kt");
             }
 
+            @TestMetadata("inlineFunctionsInClass.kt")
+            public void testInlineFunctionsInClass() throws Exception {
+                runTest("testData/evaluation/multipleBreakpoints/inlineFunctionsInClass.kt");
+            }
+
+            @TestMetadata("inlineLambdaInInlineFunction.kt")
+            public void testInlineLambdaInInlineFunction() throws Exception {
+                runTest("testData/evaluation/multipleBreakpoints/inlineLambdaInInlineFunction.kt");
+            }
+
             @TestMetadata("inlineStackTrace.kt")
             public void testInlineStackTrace() throws Exception {
                 runTest("testData/evaluation/multipleBreakpoints/inlineStackTrace.kt");
@@ -1801,6 +1811,26 @@ public abstract class K1IdeK2CodeKotlinEvaluateExpressionTestGenerated extends A
                 runTest("testData/evaluation/multipleBreakpoints/nestedCoroutineContexts.kt");
             }
 
+            @TestMetadata("nestedInlineFunctions1.kt")
+            public void testNestedInlineFunctions1() throws Exception {
+                runTest("testData/evaluation/multipleBreakpoints/nestedInlineFunctions1.kt");
+            }
+
+            @TestMetadata("nestedInlineFunctions2.kt")
+            public void testNestedInlineFunctions2() throws Exception {
+                runTest("testData/evaluation/multipleBreakpoints/nestedInlineFunctions2.kt");
+            }
+
+            @TestMetadata("nestedInlineFunctions3.kt")
+            public void testNestedInlineFunctions3() throws Exception {
+                runTest("testData/evaluation/multipleBreakpoints/nestedInlineFunctions3.kt");
+            }
+
+            @TestMetadata("nestedInlineLambdas.kt")
+            public void testNestedInlineLambdas() throws Exception {
+                runTest("testData/evaluation/multipleBreakpoints/nestedInlineLambdas.kt");
+            }
+
             @TestMetadata("noReceiverOnStack.kt")
             public void testNoReceiverOnStack() throws Exception {
                 runTest("testData/evaluation/multipleBreakpoints/noReceiverOnStack.kt");
@@ -1829,6 +1859,11 @@ public abstract class K1IdeK2CodeKotlinEvaluateExpressionTestGenerated extends A
             @TestMetadata("smartcasts.kt")
             public void testSmartcasts() throws Exception {
                 runTest("testData/evaluation/multipleBreakpoints/smartcasts.kt");
+            }
+
+            @TestMetadata("standardLibraryFunctions.kt")
+            public void testStandardLibraryFunctions() throws Exception {
+                runTest("testData/evaluation/multipleBreakpoints/standardLibraryFunctions.kt");
             }
 
             @TestMetadata("thisLabels.kt")

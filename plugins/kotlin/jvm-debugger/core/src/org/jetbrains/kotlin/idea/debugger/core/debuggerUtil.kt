@@ -90,7 +90,7 @@ private fun isInlinedArgument(localVariables: List<LocalVariable>, inlineArgumen
             .any { variableName ->
                 if (variableName.startsWith("-")) {
                     val lambdaClassName = ClassNameCalculator.getClassName(inlineArgument)?.substringAfterLast('.') ?: return@any false
-                    dropInlineSuffix(variableName) == "-$functionName-$lambdaClassName"
+                    dropInlineSuffix(variableName).substringBefore('\\') == "-$functionName-$lambdaClassName"
                 } else {
                     // For Kotlin up to 1.3.10
                     lambdaOrdinalByLocalVariable(variableName) == lambdaOrdinal
