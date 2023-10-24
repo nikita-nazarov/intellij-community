@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.idea.debugger.base.util.safeMethod
 import org.jetbrains.kotlin.idea.debugger.core.DebuggerUtils.isGeneratedIrBackendLambdaMethodName
 import org.jetbrains.kotlin.idea.debugger.core.DebuggerUtils.trimIfMangledInBytecode
 import org.jetbrains.kotlin.idea.debugger.core.getInlineFunctionAndArgumentVariablesToBordersMap
+import org.jetbrains.kotlin.idea.debugger.core.stackFrame.InlineStackTraceCalculator
 import org.jetbrains.kotlin.load.java.JvmAbi
 import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtDeclaration
@@ -98,11 +99,22 @@ open class KotlinMethodFilter(
                // A correct way here is to memorize the original location (where smart step into was started)
                // and filter out ranges that contain that original location.
                // Otherwise, nested inline with the same method name will not work correctly.
-               method.getInlineFunctionAndArgumentVariablesToBordersMap()
-                   .filter { location in it.value }
-                   .any { it.key.isInlinedFromFunction(targetMethodName, isNameMangledInBytecode, methodInfo.isInternalMethod) } ||
+               //isAnyVisibleVariableInlinedFromMethod(frameProxy, targetMethodName, isNameMangledInBytecode, methodInfo.isInternalMethod) ||
                !isGeneratedLambda && methodInfo.isInternalMethod && internalNameMatches(actualMethodName, targetMethodName)
     }
+}
+
+private fun isAnyVisibleVariableInlinedFromMethod(
+    frameProxy: StackFrameProxyImpl?,
+    methodName: String,
+    isNameMangledInBytecode: Boolean,
+    isInternalMethod: Boolean
+): Boolean {
+    if (frameProxy == null) {
+        return false
+    }
+    return InlineStackTraceCalculator.calculateVisibleVariables(frameProxy)
+        .any { it.variable.isInlinedFromFunction(methodName, isNameMangledInBytecode, isInternalMethod) }
 }
 
 private fun getMethodDescriptorAndDeclaration(
