@@ -51,6 +51,10 @@ fun ReferenceType.safeSourceName(): String? {
     return wrapAbsentInformationException { sourceName() }
 }
 
+fun ReferenceType.safeSourceDebugExtension(): String? {
+    return wrapAbsentInformationException { sourceDebugExtension() }
+}
+
 fun ReferenceType.safeFields(): List<Field> {
     return try {
         fields()

@@ -20,12 +20,10 @@ import com.intellij.debugger.ui.tree.render.DescriptorLabelListener
 import com.intellij.openapi.project.Project
 import com.sun.jdi.*
 import org.jetbrains.kotlin.idea.debugger.base.util.safeFields
+import org.jetbrains.kotlin.idea.debugger.base.util.safeSourceDebugExtension
 import org.jetbrains.kotlin.idea.debugger.base.util.safeType
-import org.jetbrains.kotlin.idea.debugger.base.util.isLateinitVariableGetter
-import org.jetbrains.kotlin.idea.debugger.base.util.isSimpleGetter
 import org.jetbrains.kotlin.idea.debugger.core.GetterDescriptor
 import org.jetbrains.kotlin.idea.debugger.core.KotlinDebuggerCoreBundle
-import org.jetbrains.kotlin.idea.debugger.core.isInKotlinSources
 import org.jetbrains.kotlin.idea.debugger.core.isInKotlinSourcesAsync
 import java.util.concurrent.CompletableFuture
 import java.util.function.Function
@@ -52,7 +50,11 @@ class KotlinClassRenderer : ClassRenderer() {
         val nodeDescriptorFactory = builder.descriptorManager
         val refType = value.referenceType()
         val gettersFuture = DebuggerUtilsAsync.allMethods(refType)
-            .thenApply { methods -> methods.getters().createNodes(value, parentDescriptor.project, evaluationContext, nodeManager) }
+            .thenApply { methods ->
+                val visibleGetters = fetchVisibleGetters(refType, methods)
+                visibleGetters.createNodes(value, parentDescriptor.project, evaluationContext, nodeManager)
+            }
+
         DebuggerUtilsAsync.allFields(refType).thenCombine(gettersFuture) { fields, getterNodes ->
             if (fields.isEmpty() && getterNodes.isEmpty()) {
                 builder.setChildren(listOf(nodeManager.createMessageNode(KotlinDebuggerCoreBundle.message("message.class.has.no.properties"))))
@@ -115,19 +117,21 @@ class KotlinClassRenderer : ClassRenderer() {
         return result
     }
 
-    private fun List<Method>.getters() =
-        filter { method ->
-            !method.isAbstract &&
-            GetterDescriptor.GETTER_PREFIXES.any { method.name().startsWith(it) } &&
-            method.argumentTypeNames().isEmpty() &&
-            method.name() != "getClass" &&
-            !method.name().endsWith("\$annotations") &&
-            method.declaringType().isInKotlinSources() &&
-            !method.isSimpleGetter() &&
-            !method.isLateinitVariableGetter()
+    private fun fetchVisibleGetters(refType: ReferenceType, allMethods: List<Method>): List<Method> {
+        val sde = refType.safeSourceDebugExtension() ?: return emptyList()
+        val visibleGetters = sde.substringAfter("DebuggerVisibleGetters").split("\n").toSet()
+        if (visibleGetters.isEmpty()) {
+            return emptyList()
         }
-        .distinctBy { it.name() }
-        .toList()
+
+        val result = mutableListOf<Method>()
+        for (method in allMethods) {
+            if (method.name() + method.signature() in visibleGetters) {
+                result.add(method)
+            }
+        }
+        return result
+    }
 
     private fun List<Method>.createNodes(
         parentObject: ObjectReference,
