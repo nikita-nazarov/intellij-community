@@ -23,10 +23,7 @@ import org.jetbrains.kotlin.idea.debugger.base.util.safeFields
 import org.jetbrains.kotlin.idea.debugger.base.util.safeType
 import org.jetbrains.kotlin.idea.debugger.base.util.isLateinitVariableGetter
 import org.jetbrains.kotlin.idea.debugger.base.util.isSimpleGetter
-import org.jetbrains.kotlin.idea.debugger.core.GetterDescriptor
-import org.jetbrains.kotlin.idea.debugger.core.KotlinDebuggerCoreBundle
-import org.jetbrains.kotlin.idea.debugger.core.isInKotlinSources
-import org.jetbrains.kotlin.idea.debugger.core.isInKotlinSourcesAsync
+import org.jetbrains.kotlin.idea.debugger.core.*
 import java.util.concurrent.CompletableFuture
 import java.util.function.Function
 
@@ -51,6 +48,7 @@ class KotlinClassRenderer : ClassRenderer() {
         val nodeManager = builder.nodeManager
         val nodeDescriptorFactory = builder.descriptorManager
         val refType = value.referenceType()
+        val metadata = fetchKotlinMetadata(refType, evaluationContext)
         val gettersFuture = DebuggerUtilsAsync.allMethods(refType)
             .thenApply { methods -> methods.getters().createNodes(value, parentDescriptor.project, evaluationContext, nodeManager) }
         DebuggerUtilsAsync.allFields(refType).thenCombine(gettersFuture) { fields, getterNodes ->
