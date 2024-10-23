@@ -52,6 +52,7 @@
     <debugger.compoundRendererProvider id="KotlinClassRendererProvider"
                                        implementation="org.jetbrains.kotlin.idea.debugger.core.KotlinClassRendererProvider"/>
     <debugger.positionManagerFactory implementation="org.jetbrains.kotlin.idea.debugger.core.KotlinPositionManagerFactory"/>
+    <debugger.dexBytecodeInspector implementation="org.jetbrains.kotlin.idea.debugger.core.DexBytecodeInspectorImpl"/>
 
 
     <debugger.sourcePositionHighlighter implementation="org.jetbrains.kotlin.idea.debugger.core.KotlinSourcePositionHighlighter"/>
