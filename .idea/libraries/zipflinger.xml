@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="zipflinger">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/zipflinger.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
