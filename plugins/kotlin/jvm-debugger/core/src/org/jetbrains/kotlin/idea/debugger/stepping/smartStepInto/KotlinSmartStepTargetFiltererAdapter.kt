@@ -89,7 +89,7 @@ internal class KotlinSmartStepTargetFiltererAdapter(
             }
 
             is BytecodeTraceElement.MethodCall -> {
-                targetFilterer.visitOrdinaryFunction(element.owner, element.name, element.descriptor, element.isStatic)
+                targetFilterer.visitOrdinaryFunction(element.owner, element.name, element.descriptor)
             }
         }
     }

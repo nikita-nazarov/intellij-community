@@ -1,36 +1,30 @@
 // Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.kotlin.idea.debugger.core
 
+import com.android.ddmlib.IDevice
+import com.android.tools.idea.run.AndroidRunConfiguration
+import com.android.tools.idea.run.ApkFileUnit
+import com.android.tools.idea.run.ApkProvider
+import com.android.zipflinger.ZipRepo
+import com.intellij.debugger.engine.PositionManagerAsync
+import com.intellij.openapi.application.readAction
+import com.intellij.openapi.module.Module
+import com.intellij.openapi.progress.runBlockingCancellable
 import com.intellij.openapi.roots.ProjectFileIndex
+import com.intellij.psi.util.parentOfType
 import com.intellij.xdebugger.impl.XDebugSessionImpl
+import com.sun.jdi.Location
 import com.sun.jdi.Method
 import kexter.*
-import com.intellij.openapi.module.Module
+import kotlinx.coroutines.runBlocking
+import org.jetbrains.kotlin.idea.debugger.base.util.safeGetSourcePositionAsync
 import org.jetbrains.kotlin.idea.debugger.base.util.safeLocation
 import org.jetbrains.kotlin.idea.debugger.base.util.safeMethod
-import org.jetbrains.kotlin.idea.debugger.stepping.smartStepInto.KotlinMethodSmartStepTarget
-import org.jetbrains.kotlin.idea.debugger.stepping.smartStepInto.SmartStepIntoContext
-import com.android.tools.idea.run.AndroidRunConfiguration
-import com.android.tools.idea.run.ApkProvider
-import com.android.ddmlib.IDevice
-import com.android.tools.idea.run.ApkFileUnit
-import com.android.tools.layoutinspector.toInt
-import com.android.tools.smali.dexlib2.DexFileFactory
-import com.android.tools.smali.dexlib2.Opcodes
-import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile
-import com.android.zipflinger.ZipRepo
-import com.intellij.openapi.progress.runBlockingCancellable
-import com.google.common.util.concurrent.ListenableFuture
-import com.intellij.openapi.application.readAction
-import com.intellij.openapi.util.io.toNioPathOrNull
-import com.intellij.util.io.toByteArray
-import com.sun.jdi.Location
-import kexter.core.DexReader
-import kotlinx.coroutines.runBlocking
-import java.nio.file.Paths
-import java.util.LinkedList
-import java.util.zip.ZipFile
-import kotlin.math.sign
+import org.jetbrains.kotlin.idea.debugger.core.InlineCallInfo
+import org.jetbrains.kotlin.idea.debugger.stepping.smartStepInto.*
+import org.jetbrains.kotlin.psi.KtNamedFunction
+import org.jetbrains.kotlin.utils.addToStdlib.popLast
+import java.util.*
 
 class DexBytecodeInspectorImpl : DexBytecodeInspector {
     override fun hasOnlyInvokeStatic(method: Method): Boolean {
@@ -44,7 +38,7 @@ class DexBytecodeInspectorImpl : DexBytecodeInspector {
                 (instructions.size == 2 || instructions[1].opcode.isMoveResult())
     }
 
-    override suspend fun filterAlreadyExecutedTargets(
+    override fun filterAlreadyExecutedTargets(
         targets: List<KotlinMethodSmartStepTarget>,
         context: SmartStepIntoContext
     ): List<KotlinMethodSmartStepTarget> {
@@ -55,10 +49,10 @@ class DexBytecodeInspectorImpl : DexBytecodeInspector {
         val allLocations = method.allLineLocations()
 
         val project = debugProcess.project
-        val module = readAction {
+        val module = runBlocking { readAction {
                 val file = expression.containingFile.virtualFile
                 ProjectFileIndex.getInstance(project).getModuleForFile(file)
-        } ?: return targets
+        } } ?: return targets
         //val paths = com.intellij.openapi.compiler.CompilerPaths.getOutputPaths(arrayOf(module)).toList()
         val environment = (debugProcess.session.xDebugSession as? XDebugSessionImpl)?.executionEnvironment ?: return targets
         val configuration = environment.runProfile as? AndroidRunConfiguration ?: return targets
@@ -74,10 +68,10 @@ class DexBytecodeInspectorImpl : DexBytecodeInspector {
         }
         val apkFiles = findApkFilesOfModule(devices, apkProvider, module)
         val dex = findDexWithLocation(apkFiles, location) ?: return targets
-        val methodIndexToName = buildMap {
+        val methodIndexToMethod = buildMap {
             for (dexClass in dex.classes.values) {
                 for (dexMethod in dexClass.methods.values) {
-                    put(dexMethod.index, dexMethod.name)
+                    put(dexMethod.index, dexMethod)
                 }
             }
         }
@@ -86,9 +80,14 @@ class DexBytecodeInspectorImpl : DexBytecodeInspector {
         val lineTableEntries = LinkedList(debugInfo.lineTable)
         var currentLineNumber: Int? = null
         val invokesOnSameLineBeforeCurrentLocation = mutableListOf<Instruction>()
-        val inlineCalls = extractInlineCalls(location)
+        var lineEverMatched = false
+        var inInline = false
+        val locationIndex = location.codeIndex()
+        val inlineCalls= extractInlineCalls(location)
+        val visitedInlineCalls = mutableListOf<InlineCallInfo>()
+        val visitedInlineInvokeCalls = mutableListOf<InlineCallInfo>()
         for (insn in methodBytecode.instructions) {
-            if (insn.index >= location.codeIndex().toUInt()) {
+            if (insn.index >= locationIndex.toUInt()) {
                 break
             }
 
@@ -98,14 +97,47 @@ class DexBytecodeInspectorImpl : DexBytecodeInspector {
                 lineTableEntries.pop()
             }
 
-            if (currentLineNumber == location.lineNumber() && insn.opcode.isInvoke()) {
-                invokesOnSameLineBeforeCurrentLocation.add(insn)
+            if (currentLineNumber == location.lineNumber()) {
+                lineEverMatched = true
+                if (insn.opcode.isInvoke()) {
+                    invokesOnSameLineBeforeCurrentLocation.add(insn)
+                }
+            }
+
+            if (lineEverMatched) {
+                val inlineCall = inlineCalls.firstOrNull { insn.index.toLong() in it.bciRange }
+                if (inlineCall == null) {
+                    inInline = false
+                    continue
+                }
+                if (inInline) continue
+                inInline = true
+                if (inlineCall.isInlineFun) {
+                    visitedInlineCalls.add(inlineCall)
+                } else {
+                    visitedInlineInvokeCalls.add(inlineCall)
+                }
             }
         }
-        val namesToFilter = invokesOnSameLineBeforeCurrentLocation
-            .mapNotNull { methodIndexToName[it.methodIndex()] }
-            .toSet()
-        return targets.filter { it.methodInfo.name !in namesToFilter }
+
+        val signaturesOfMethodsToFilter = invokesOnSameLineBeforeCurrentLocation
+            .mapNotNull { methodIndexToMethod[it.methodIndex()]?.getBytecodeSignature() }
+        val filterer = KotlinSmartStepTargetFilterer(targets, debugProcess)
+        for (bytecodeSignature in signaturesOfMethodsToFilter) {
+            with(bytecodeSignature) {
+                runBlocking {
+                    filterer.visitOrdinaryFunction(owner, name, signature)
+                }
+            }
+        }
+
+        for (inlineCall in visitedInlineCalls) {
+            runBlocking {
+                val call = getCalledInlineFunction(debugProcess.positionManager, inlineCall.startLocation) ?: return@runBlocking
+                filterer.visitInlineFunction(call)
+            }
+        }
+        return filterer.getUnvisitedTargets()
     }
 
     private fun findDexWithLocation(apkFiles: List<ApkFileUnit>, location: Location): Dex? {
@@ -144,6 +176,13 @@ class DexBytecodeInspectorImpl : DexBytecodeInspector {
     }
 }
 
+private fun DexMethod.getBytecodeSignature(): BytecodeSignature {
+    // Drop first 'L' and last ';'
+    val owner = type.drop(1).dropLast(1)
+    val signature = params.joinToString(separator = "", prefix = "(", postfix = ")") + returnType
+    return BytecodeSignature(owner, name, signature)
+}
+
 private fun Opcode.isInvokeStatic(): Boolean {
     return this == Opcode.INVOKE_STATIC || this == Opcode.INVOKE_STATIC_RANGE
 }
@@ -171,7 +210,7 @@ private fun Instruction.methodIndex(): UInt {
 
 // TODO move these declarations to utils of some sort
 // Copied from src/org/jetbrains/kotlin/idea/debugger/stepping/smartStepInto/KotlinSmartStepTargetFiltererAdapter.kt
-internal data class InlineCallInfo(val variableName: String, val bciRange: LongRange, val startLocation: Location)
+internal data class InlineCallInfo(val isInlineFun: Boolean, val bciRange: LongRange, val startLocation: Location)
 
 private fun extractInlineCalls(location: Location): List<InlineCallInfo> = location.safeMethod()
     ?.getInlineFunctionAndArgumentVariablesToBordersMap()
@@ -179,10 +218,16 @@ private fun extractInlineCalls(location: Location): List<InlineCallInfo> = locat
     .orEmpty()
     .map { (variable, locationRange) ->
         InlineCallInfo(
-            variableName = variable.name(),
+            isInlineFun = variable.name().isInlineFunctionMarkerVariableName,
             bciRange = locationRange.start.codeIndex()..locationRange.endInclusive.codeIndex(),
             startLocation = locationRange.start
         )
     }
     // Filter already visible variable to support smart-step-into while inside an inline function
     .filterNot { location.codeIndex() in it.bciRange }
+
+
+private suspend fun getCalledInlineFunction(positionManager: PositionManagerAsync, location: Location): KtNamedFunction? {
+    val sourcePosition = positionManager.safeGetSourcePositionAsync(location) ?: return null
+    return readAction { sourcePosition.elementAt?.parentOfType<KtNamedFunction>() }
+}
