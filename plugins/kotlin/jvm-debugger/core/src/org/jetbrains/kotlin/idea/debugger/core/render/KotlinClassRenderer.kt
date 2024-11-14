@@ -18,6 +18,7 @@ import com.intellij.debugger.ui.tree.render.ChildrenBuilder
 import com.intellij.debugger.ui.tree.render.ClassRenderer
 import com.intellij.debugger.ui.tree.render.DescriptorLabelListener
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.registry.Registry
 import com.sun.jdi.*
 import org.jetbrains.kotlin.idea.debugger.base.util.safeFields
 import org.jetbrains.kotlin.idea.debugger.base.util.safeType
@@ -31,8 +32,10 @@ import kotlinx.metadata.isNotDefault
 import kotlinx.metadata.jvm.KotlinClassMetadata
 import org.jetbrains.kotlin.idea.debugger.core.*
 import org.jetbrains.kotlin.util.capitalizeDecapitalize.capitalizeAsciiOnly
+import java.io.File
 import java.util.concurrent.CompletableFuture
 import java.util.function.Function
+import kotlin.system.measureTimeMillis
 
 class KotlinClassRenderer : ClassRenderer() {
     init {
@@ -50,6 +53,8 @@ class KotlinClassRenderer : ClassRenderer() {
             builder.setChildren(emptyList())
             return
         }
+
+        runBenchmark(evaluationContext)
 
         val parentDescriptor = builder.parentDescriptor as ValueDescriptorImpl
         val nodeManager = builder.nodeManager
@@ -96,6 +101,53 @@ class KotlinClassRenderer : ClassRenderer() {
         return methods
             .filter { it.name() in gettersToShow }
             .distinctBy { it.name() }
+    }
+
+    private fun runBenchmark(context: EvaluationContext) {
+        val fileName = Registry.get("debugger.metadata.benchmark.file.name").asString()
+        val metadataCache = KotlinMetadataDebuggerCacheService.getInstance(context.project)
+        val metadataFetcher: (ReferenceType) -> KotlinClassMetadata? =
+            if (Registry.get("debugger.metadata.benchmark.method").asInteger() == 1) {
+                { metadataCache.getKotlinMetadata(it, context) }
+            } else {
+                { metadataCache.getKotlinMetadata2(it, context) }
+            }
+
+        fun runBenchmark(classPrefix: String, classNum: Int) {
+            val classes = buildList {
+                for (i in 0..<classNum) {
+                    val className = "com.example.myapplication.${classPrefix}_$i"
+                    val clazz =
+                        context.debugProcess.findClass(context, className, null) ?: throw IllegalStateException("$className not found")
+                    add(clazz)
+                }
+            }
+
+            val times = mutableListOf<Long>()
+            repeat(10) {
+                val time = measureTimeMillis {
+                    for (i in 0..<classNum) {
+                        val clazz = classes[i]
+                        metadataFetcher(clazz) ?: throw IllegalStateException("Couldn't fetch metadata for ${clazz.name()}")
+                    }
+                }
+                times.add(time)
+            }
+
+            File(fileName).appendText("${classNum}, ${times.average()}\n")
+        }
+
+        File(fileName).appendText("Number of classes, Average time\n")
+        try {
+            runBenchmark("A1", 10)
+            runBenchmark("A2", 50)
+            runBenchmark("A3", 100)
+            runBenchmark("A4", 250)
+            runBenchmark("A5", 500)
+            runBenchmark("A6", 1000)
+        } catch (ex: IllegalStateException) {
+            File("/tmp/errors.txt").appendText("${ex.message}\n")
+        }
     }
 
     private fun Collection<ReferenceType>.calculateGettersToShow(context: EvaluationContext): Set<String>? {

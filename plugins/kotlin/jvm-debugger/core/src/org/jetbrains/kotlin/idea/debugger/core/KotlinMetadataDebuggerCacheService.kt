@@ -44,6 +44,15 @@ class KotlinMetadataDebuggerCacheService private constructor(project: Project) {
     fun getKotlinMetadata(refType: ReferenceType, context: EvaluationContext): KotlinClassMetadata? {
         for (cache in caches) {
             if (context.debugProcess === cache.debugProcess) {
+                return cache.fetchKotlinMetadata(refType, context)
+            }
+        }
+        return null
+    }
+
+    fun getKotlinMetadata2(refType: ReferenceType, context: EvaluationContext): KotlinClassMetadata? {
+        for (cache in caches) {
+            if (context.debugProcess === cache.debugProcess) {
                 return cache.fetchKotlinMetadata2(refType, context)
             }
         }
@@ -196,7 +205,7 @@ private class KotlinMetadataCache(val debugProcess: DebugProcess)  {
         }
     }
 
-    fun fetchKotlinMetadata1(refType: ReferenceType, context: EvaluationContext): KotlinClassMetadata? {
+    fun fetchKotlinMetadata(refType: ReferenceType, context: EvaluationContext): KotlinClassMetadata? {
         if (context.debugProcess !== debugProcess) {
             return null
         }
@@ -208,7 +217,7 @@ private class KotlinMetadataCache(val debugProcess: DebugProcess)  {
         when (val fetcher = metadataJdiFetcher) {
             is MetadataJdiFetcher.FailedToInitialize -> return null
             is MetadataJdiFetcher.Initialized -> {
-                cache[refType]?.let { return it }
+                //cache[refType]?.let { return it }
 
                 val metadataAsJson = fetcher.fetchMetadataAsJson(refType, context) ?: return null
                 val metadata = wrapJsonSyntaxException {
