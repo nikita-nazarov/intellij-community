@@ -8,6 +8,7 @@ import com.intellij.debugger.engine.DebugProcess
 import com.intellij.debugger.engine.evaluation.EvaluationContext
 import com.intellij.debugger.impl.DebuggerManagerListener
 import com.intellij.debugger.impl.DebuggerSession
+import com.intellij.debugger.engine.DebuggerUtils
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -43,7 +44,7 @@ class KotlinMetadataDebuggerCacheService private constructor(project: Project) {
     fun getKotlinMetadata(refType: ReferenceType, context: EvaluationContext): KotlinClassMetadata? {
         for (cache in caches) {
             if (context.debugProcess === cache.debugProcess) {
-                return cache.fetchKotlinMetadata(refType, context)
+                return cache.fetchKotlinMetadata2(refType, context)
             }
         }
         return null
@@ -117,10 +118,85 @@ private class KotlinMetadataCache(val debugProcess: DebugProcess)  {
         }
     }
 
+    private class MetadataAdapter2 {
+        var kind: Int = 0
+        var metadataVersion: Array<Int> = emptyArray()
+        var data1: Array<String> = emptyArray()
+        var data2: Array<String> = emptyArray()
+        var extraString: String = ""
+        var packageName: String = ""
+        var extraInt: Int = 0
+
+        fun toMetadata(): Metadata {
+            return Metadata(
+                kind = kind,
+                metadataVersion = metadataVersion.toIntArray(),
+                data1 = data1,
+                data2 = data2,
+                extraString = extraString,
+                packageName = packageName,
+                extraInt = extraInt
+            )
+        }
+    }
+
     private val cache = mutableMapOf<ReferenceType, KotlinClassMetadata>()
     private lateinit var metadataJdiFetcher: MetadataJdiFetcher
 
-    fun fetchKotlinMetadata(refType: ReferenceType, context: EvaluationContext): KotlinClassMetadata? {
+    fun fetchKotlinMetadata2(refType: ReferenceType, context: EvaluationContext): KotlinClassMetadata? {
+        val classObject = refType.classObject()
+        val metadataClass = wrapEvaluateException {
+            debugProcess.findClass(context, "kotlin.Metadata", null)
+        } ?: return null
+        val getAnnotation = DebuggerUtils.findMethod(classObject.referenceType(), "getAnnotation", null)
+            ?: return null
+        val metadataRef = debugProcess.invokeMethod(
+            context, classObject, getAnnotation, listOf(metadataClass.classObject())
+        ) as? ObjectReference ?: return null
+        val metadataAdapter = MetadataAdapter2()
+        val methods = metadataRef.referenceType().methods()
+        for (method in methods) {
+            fun invoke(): Value? {
+                return debugProcess.invokeMethod(context, metadataRef, method, emptyList())
+            }
+
+            when (method.name()) {
+                "d1" -> {
+                    val array = (invoke() as? ArrayReference)?.toStringArray() ?: return null
+                    metadataAdapter.data1 = array
+                }
+                "d2" -> {
+                    val array = (invoke() as? ArrayReference)?.toStringArray() ?: return null
+                    metadataAdapter.data2 = array
+                }
+                "k" -> {
+                    val value = (invoke() as? IntegerValue)?.value() ?: return null
+                    metadataAdapter.kind = value
+                }
+                "mv" -> {
+                    val array = (invoke() as? ArrayReference)?.toIntArray() ?: return null
+                    metadataAdapter.metadataVersion = array
+                }
+                "xs" -> {
+                    val value = (invoke() as? StringReference)?.value() ?: return null
+                    metadataAdapter.extraString = value
+                }
+                "pn" -> {
+                    val value = (invoke() as? StringReference)?.value() ?: return null
+                    metadataAdapter.packageName = value
+                }
+                "xi" -> {
+                    val value = (invoke() as? IntegerValue)?.value() ?: return null
+                    metadataAdapter.extraInt = value
+                }
+            }
+        }
+        return wrapIllegalArgumentException {
+            KotlinClassMetadata.readStrict(metadataAdapter.toMetadata())
+        }
+    }
+
+    fun fetchKotlinMetadata1(refType: ReferenceType, context: EvaluationContext): KotlinClassMetadata? {
         if (context.debugProcess !== debugProcess) {
             return null
         }
@@ -148,6 +224,24 @@ private class KotlinMetadataCache(val debugProcess: DebugProcess)  {
             }
         }
     }
+}
+
+private fun ArrayReference.toStringArray(): Array<String>? {
+    val result = Array(length()) { "" }
+    for (i in 0..<length()) {
+        val value = (getValue(i) as? StringReference)?.value() ?: return null
+        result[i] = value
+    }
+    return result
+}
+
+private fun ArrayReference.toIntArray(): Array<Int>? {
+    val result = Array(length()) { 0 }
+    for (i in 0..<length()) {
+        val value = (getValue(i) as? IntegerValue)?.value() ?: return null
+        result[i] = value
+    }
+    return result
 }
 
 private fun <T> wrapJsonSyntaxException(block: () -> T): T? {
