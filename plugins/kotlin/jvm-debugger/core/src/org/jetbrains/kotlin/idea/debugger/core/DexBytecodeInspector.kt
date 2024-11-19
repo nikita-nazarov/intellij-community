@@ -3,6 +3,8 @@ package org.jetbrains.kotlin.idea.debugger.core
 
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.sun.jdi.Method
+import kexter.DexBytecode
+import org.jetbrains.kotlin.idea.debugger.base.util.safeLocation
 import org.jetbrains.kotlin.idea.debugger.stepping.smartStepInto.KotlinMethodSmartStepTarget
 import org.jetbrains.kotlin.idea.debugger.stepping.smartStepInto.SmartStepIntoContext
 
