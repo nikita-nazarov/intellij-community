@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="libkexter">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/libkexter.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
