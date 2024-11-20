@@ -17,7 +17,7 @@ interface DexBytecodeInspector {
         return false
     }
 
-    suspend fun filterAlreadyExecutedTargets(
+    fun filterAlreadyExecutedTargets(
         targets: List<KotlinMethodSmartStepTarget>,
         context: SmartStepIntoContext
     ): List<KotlinMethodSmartStepTarget> {
