@@ -77,7 +77,6 @@ private suspend fun KotlinSmartStepTargetFilterer.visitMethodUntliLocation(
     var lineEverMatched = false
     var inInline = false
     val inlineCalls = LinkedList(extractInlineCalls(location))
-    val methodIndexToMethod = dex.getMethodIndexToMethodMap()
     for (insn in methodBytecode.instructions) {
         if (insn.index >= location.codeIndex().toUInt()) {
             break
@@ -93,12 +92,12 @@ private suspend fun KotlinSmartStepTargetFilterer.visitMethodUntliLocation(
         if (currentLineNumber == location.lineNumber()) {
             lineEverMatched = true
             if (insn.opcode.isInvoke()) {
-                val dexMethod = methodIndexToMethod[insn.methodIndex()]
-                if (dexMethod != null) {
+                val methodInfo = dex.allMethods[insn.methodIndex()]
+                if (methodInfo != null) {
                     visitOrdinaryFunction(
-                        dexMethod.owner,
-                        dexMethod.name,
-                        dexMethod.signature,
+                        methodInfo.owner,
+                        methodInfo.name,
+                        methodInfo.signature,
                         insn.opcode.isInvokeStatic()
                     )
                 }
@@ -106,7 +105,7 @@ private suspend fun KotlinSmartStepTargetFilterer.visitMethodUntliLocation(
         }
 
         if (inlineCalls.isNotEmpty() && lineEverMatched) {
-            while (inlineCalls.first.bciRange.endInclusive.toUInt() < insn.index) {
+            while (inlineCalls.first.bciRange.last.toUInt() < insn.index) {
                 inlineCalls.pop()
             }
             val inlineCall = inlineCalls.firstOrNull { insn.index.toLong() in it.bciRange }
@@ -164,16 +163,6 @@ private fun Method.getDebugInfo(): DexMethodDebugInfo {
         LineTableEntry(it.codeIndex().toUInt(), it.lineNumber())
     }
     return DexMethodDebugInfo(lineTable)
-}
-
-private fun Dex.getMethodIndexToMethodMap(): Map<UInt, DexMethod> {
-    return buildMap {
-        for (dexClass in classes.values) {
-            for (dexMethod in dexClass.methods.values) {
-                put(dexMethod.index, dexMethod)
-            }
-        }
-    }
 }
 
 // Copied from src/org/jetbrains/kotlin/idea/debugger/stepping/smartStepInto/KotlinSmartStepTargetFiltererAdapter.kt
