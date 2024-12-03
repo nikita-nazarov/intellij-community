@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.idea.debugger.stepping.smartStepInto.KotlinSmartStep
 import org.jetbrains.kotlin.idea.debugger.stepping.smartStepInto.SmartStepIntoContext
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import java.util.LinkedList
+import kotlin.system.measureTimeMillis
 
 class DexBytecodeInspectorImpl : DexBytecodeInspector {
     override fun hasOnlyInvokeStatic(method: Method): Boolean {
@@ -48,7 +49,10 @@ class DexBytecodeInspectorImpl : DexBytecodeInspector {
 
         val filterer = KotlinSmartStepTargetFilterer(targets, debugProcess)
         runBlockingCancellable {
-            filterer.visitMethodUntliLocation(debugProcess, method, location, dex)
+            val time = measureTimeMillis {
+                filterer.visitMethodUntliLocation(debugProcess, method, location, dex)
+            }
+            //DexFinder.log("filter", time)
         }
         return filterer.getUnvisitedTargets()
     }
