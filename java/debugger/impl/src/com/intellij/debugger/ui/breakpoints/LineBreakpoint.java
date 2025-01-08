@@ -42,7 +42,10 @@ import com.intellij.xdebugger.breakpoints.XLineBreakpoint;
 import com.intellij.xdebugger.impl.XDebuggerManagerImpl;
 import com.intellij.xdebugger.impl.XDebuggerUtilImpl;
 import com.sun.jdi.*;
+import kexter.DexBytecode;
 import com.sun.jdi.event.LocatableEvent;
+import kexter.DexMethodDebugInfo;
+import kexter.Instruction;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -52,6 +55,8 @@ import org.jetbrains.java.debugger.breakpoints.properties.JavaLineBreakpointProp
 import org.jetbrains.jps.model.java.JavaModuleSourceRootTypes;
 
 import javax.swing.*;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -196,6 +201,26 @@ public class LineBreakpoint<P extends JavaBreakpointProperties> extends Breakpoi
     return false;
   }
 
+  private void benchmarkKexter(Location location) {
+    Method method = location.method();
+    if (!method.name().startsWith("bench")) {
+      return;
+    }
+
+    long start = System.currentTimeMillis();
+    DexBytecode bytecode = DexBytecode.Companion.fromBytes(
+      method.bytecodes(), new DexMethodDebugInfo(), new kexter.Logger()
+    );
+    List<Instruction> instructions = bytecode.getInstructions();
+    long time = System.currentTimeMillis() - start;
+    try {
+      BufferedWriter writer = new BufferedWriter(new FileWriter("/tmp/benchmark.txt", true));
+      writer.append(String.format("%s %d %d\n", method.name(), instructions.size(), time));
+      writer.close();
+    } catch (Exception ignored) {
+    }
+  }
+
   protected boolean acceptLocation(final DebugProcessImpl debugProcess, ReferenceType classType, final Location loc) {
     // Some frameworks may create synthetic methods with lines mapped to user code, see IDEA-143852
     // if (DebuggerUtils.isSynthetic(method)) { return false; }
@@ -205,6 +230,8 @@ public class LineBreakpoint<P extends JavaBreakpointProperties> extends Breakpoi
     }
     SourcePosition position = debugProcess.getPositionManager().getSourcePosition(loc);
     if (position == null) return false;
+
+    benchmarkKexter(loc);
 
     return ReadAction.compute(() -> {
       JavaLineBreakpointType type = getXBreakpointType();
