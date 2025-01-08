@@ -35,6 +35,8 @@
                     interface="com.intellij.debugger.actions.JvmSmartStepIntoHandler" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.debugger.jvmSteppingCommandProvider"
                     interface="com.intellij.debugger.impl.JvmSteppingCommandProvider" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.debugger.jdiClassLoader"
+                    interface="com.intellij.debugger.impl.JdiClassLoader" dynamic="true"/>
 
     <extensionPoint qualifiedName="com.intellij.debugger.frameExtraVarsProvider"
                     interface="com.intellij.debugger.engine.FrameExtraVariablesProvider" dynamic="true"/>
@@ -95,6 +97,7 @@
     <projectService serviceInterface="com.intellij.debugger.DebuggerManager"
                     serviceImplementation="com.intellij.debugger.impl.DebuggerManagerImpl"/>
     <debugger.additionalContextProvider implementation="com.intellij.debugger.engine.evaluation.MarkedObjectAdditionalContextProvider"/>
+    <debugger.jdiClassLoader implementation="com.intellij.debugger.impl.JdiClassLoaderImpl"/>
     <debuggerEditorTextProvider language="JAVA" implementationClass="com.intellij.debugger.impl.JavaEditorTextProviderImpl"/>
     <javaExpressionSurrounder implementation="com.intellij.debugger.codeinsight.JavaWithRuntimeCastSurrounder"/>
 
