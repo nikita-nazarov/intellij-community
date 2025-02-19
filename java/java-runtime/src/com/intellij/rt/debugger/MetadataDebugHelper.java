@@ -7,6 +7,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 public class MetadataDebugHelper {
+  public static final String METADATA_SEPARATOR = "\n";
+
   private static final String METADATA_CLASS_NAME = "kotlin.Metadata";
 
   private static final String KIND = "kind";
@@ -80,6 +82,29 @@ public class MetadataDebugHelper {
     } catch (Exception ex) {
       return null;
     }
+  }
+
+  /*
+   * This function is used similarly to `getDebugMetadataAsJson`, when there is a need to
+   * fetch metadata for multiple classes.
+   *
+   * The return value is a concatenation of metadata JSON representations of given classes
+   * separated by MetadataDebugHelper.METADATA_SEPARATOR.
+   */
+  public static String getDebugMetadataListAsJson(Class<?>... classes) {
+    StringBuilder sb = new StringBuilder();
+    for (Class<?> cls : classes) {
+      String metadataAsJson = getDebugMetadataAsJson(cls);
+      if (metadataAsJson == null) {
+        return null;
+      }
+
+      if (sb.length() != 0) {
+        sb.append(METADATA_SEPARATOR);
+      }
+      sb.append(metadataAsJson);
+    }
+    return sb.toString();
   }
 
   private static void appendAsJsonValue(StringBuilder sb, String name, Object value) {
