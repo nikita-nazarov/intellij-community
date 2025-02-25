@@ -64,7 +64,6 @@
         </SOURCES>
       </library>
     </orderEntry>
-    <orderEntry type="library" name="jb-jdi" level="project" />
     <orderEntry type="library" name="StreamEx" level="project" />
     <orderEntry type="module" module-name="intellij.platform.statistics" />
     <orderEntry type="module" module-name="intellij.platform.images" />
@@ -85,6 +84,7 @@
     <orderEntry type="module" module-name="intellij.java.debugger.impl.shared" />
     <orderEntry type="module" module-name="intellij.platform.eel.provider" />
     <orderEntry type="module" module-name="intellij.java.codeserver.highlighting" />
+    <orderEntry type="library" name="my-jdi" level="project" />
   </component>
   <component name="copyright">
     <Base>

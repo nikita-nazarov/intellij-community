@@ -99,7 +99,10 @@ import org.jetbrains.annotations.*;
 
 import javax.swing.*;
 import javax.swing.plaf.basic.BasicArrowButton;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.net.UnknownHostException;
 import java.util.*;
@@ -1689,14 +1692,52 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
   public @Nullable ReferenceType findLoadedClass(@Nullable EvaluationContext evaluationContext,
                                                  String className,
                                                  ClassLoaderReference classLoader) {
-    List<ReferenceType> types = ContainerUtil.filter(getCurrentVm(evaluationContext).classesByName(className), ReferenceType::isPrepared);
-    // first try to quickly find the equal classloader only
-    ReferenceType result = ContainerUtil.find(types, refType -> Objects.equals(classLoader, refType.classLoader()));
-    // now do the full visibility check
-    if (result == null && classLoader != null) {
-      result = ContainerUtil.find(types, refType -> isVisibleFromClassLoader(classLoader, refType));
+    PrintWriter pw = null;
+    try {
+      FileOutputStream out = new FileOutputStream("/tmp/log.txt", true);
+      pw = new PrintWriter(out);
+      pw.write("Looking for class: " + className);
+      pw.write("\n");
+      pw.flush();
+      List<ReferenceType> types = ContainerUtil.filter(getCurrentVm(evaluationContext).classesByName(className), ReferenceType::isPrepared);
+      if (!types.isEmpty()) {
+        pw.write("Trying to print...\n");
+        pw.flush();
+        pw.write("Found: " + types.get(0).toString());
+        pw.write("\n");
+      } else {
+        pw.write("Found nothing\n");
+      }
+      pw.flush();
+      pw.write("Checking class loader...\n");
+      pw.flush();
+      // first try to quickly find the equal classloader only
+      PrintWriter finalPw = pw;
+      ReferenceType result = ContainerUtil.find(types, refType -> {
+        if (refType.classLoader() == null) {
+          finalPw.write("Class loader is null");
+        } else {
+          finalPw.write("Are they equal?: " + classLoader.toString() + " " + refType.classLoader().toString());
+        }
+        finalPw.flush();
+        return Objects.equals(classLoader, refType.classLoader());
+      });
+      pw.write("Result: " + result);
+      pw.write("\n");
+      pw.flush();
+
+      // now do the full visibility check
+      if (result == null && classLoader != null) {
+        result = ContainerUtil.find(types, refType -> isVisibleFromClassLoader(classLoader, refType));
+      }
+      pw.write("Returning\n");
+      pw.flush();
+      return result;
+    } catch (Exception ex) {
+      pw.write("Exception\n");
+      pw.flush();
+      return null;
     }
-    return result;
   }
 
   private VirtualMachineProxyImpl getCurrentVm(@Nullable EvaluationContext evaluationContext) {
@@ -2137,7 +2178,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
 
     protected void beforeSteppingAction(SuspendContextImpl context) {
       if (context != null) {
-        DebuggerUtilsImpl.forEachSafe(SteppingListener.getExtensions(),
+        forEachSafe(SteppingListener.getExtensions(),
                                       listener -> listener.beforeSteppingStarted(context, getSteppingAction()));
       }
     }
@@ -2187,7 +2228,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
     public void contextAction(@NotNull SuspendContextImpl suspendContext) {
       showStatusText(JavaDebuggerBundle.message("status.process.resumed"));
       if (!(this instanceof StepCommand)) {
-        DebuggerUtilsImpl.forEachSafe(SteppingListener.getExtensions(), listener -> listener.beforeResume(suspendContext));
+        forEachSafe(SteppingListener.getExtensions(), listener -> listener.beforeResume(suspendContext));
       }
       resumeAction();
 
@@ -2603,7 +2644,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
 
         if (vm != null) {
           final VirtualMachine vm1 = vm;
-          afterProcessStarted(() -> getCommandManagerThread().schedule(new DebuggerCommandImpl(PrioritizedTask.Priority.HIGH) {
+          afterProcessStarted(() -> getCommandManagerThread().schedule(new DebuggerCommandImpl(Priority.HIGH) {
             @Override
             protected void action() {
               try {

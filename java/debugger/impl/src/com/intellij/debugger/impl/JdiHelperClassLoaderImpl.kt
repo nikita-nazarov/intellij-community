@@ -16,6 +16,9 @@ private class JdiHelperClassLoaderImpl : JdiHelperClassLoader {
     cls: Class<*>, evaluationContext: EvaluationContextImpl,
     vararg additionalClassesToLoad: String,
   ): ClassType? {
+    if (evaluationContext.virtualMachineProxy.virtualMachine.name() == "Dalvik") {
+      return null
+    }
     val vmProxy = evaluationContext.virtualMachineProxy
     val cache = vmProxy.getOrCreateUserData(HELPER_CLASS_CACHE_KEY) {
       HelperClassCache(evaluationContext.debugProcess, evaluationContext.managerThread)
